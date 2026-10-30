@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CUDA: CPU loop vs kernel launch</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f3f4f6;
+    --text: #1f2328;
+    --text-2: #57606a;
+    --text-3: #8b949e;
+    --idle: rgba(127,127,127,0.25);
+    --done: rgb(29,158,117);
+    --cur: rgb(216,90,48);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d;
+      --surface: #22252c;
+      --text: #e6e8eb;
+      --text-2: #a4abb5;
+      --text-3: #7d8590;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; font-weight: 500; margin: 0 0 14px; }
+  p { margin: 0; }
+  button {
+    font: inherit; font-size: 14px; padding: 7px 14px; border-radius: 8px; cursor: pointer;
+    background: var(--surface); color: var(--text); border: 1px solid rgba(127,127,127,0.35);
+  }
+  button:hover { border-color: rgba(127,127,127,0.7); }
+
+  .cmp { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .card { background: var(--surface); border-radius: 10px; padding: 10px 12px; }
+  .card pre { margin: 6px 0 0; font-family: var(--mono); font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
+  .label { font-size: 13px; color: var(--text-2); }
+
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 10px; }
+  .stats div { background: var(--surface); border-radius: 10px; padding: 8px 12px; }
+  .stats .k { font-size: 12px; color: var(--text-2); }
+  .stats .v { font-size: 18px; font-weight: 500; }
+
+  #city { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
+  .tile { background: var(--surface); border-radius: 8px; padding: 5px; }
+  .tl { font-size: 10px; color: var(--text-3); margin-bottom: 3px; }
+  .dots { display: grid; grid-template-columns: repeat(8, 1fr); gap: 1px; }
+  .dots span { aspect-ratio: 1; border-radius: 2px; background: var(--idle); cursor: pointer; }
+  .dots span.d { background: var(--done); }
+  .dots span.c { background: var(--cur); }
+
+  #info {
+    margin-top: 10px; font-family: var(--mono); font-size: 12px; line-height: 1.7; color: var(--text-2);
+    background: var(--surface); border-radius: 10px; padding: 10px 12px; min-height: 2.2em;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>CPU loop vs CUDA kernel launch</h1>
+
+  <div class="cmp">
+    <div class="card">
+      <p class="label">CPU way: you write the loop</p>
+<pre>for (int id = 0; id &lt; 1536; id++) {
+    whoami(id);   // one at a time
+}</pre>
+    </div>
+    <div class="card">
+      <p class="label">CUDA way: the launch is the loop</p>
+<pre>whoami&lt;&lt;&lt;grid, block&gt;&gt;&gt;();
+// 1536 copies start; each reads its
+// own blockIdx / threadIdx</pre>
+    </div>
+  </div>
+
+  <div class="bar">
+    <button id="rc">Run CPU loop</button>
+    <button id="rg">Launch GPU kernel</button>
+    <button id="rr">Reset</button>
+  </div>
+
+  <div class="stats">
+    <div><p class="k">Code that repeats</p><p class="v" id="s1">-</p></div>
+    <div><p class="k">Threads finished</p><p class="v" id="s2">0 / 1536</p></div>
+    <div><p class="k">Doing work at once</p><p class="v" id="s3">0</p></div>
+  </div>
+
+  <div id="city"></div>
+  <div id="info">Each small square is one thread, grouped into the 24 blocks. Run either mode, then click any square to see how that thread worked out its own id.</div>
+</main>
+
+<script>
+  // Launch configuration (matches the CUDA code: grid 2x3x4, block 4x4x4)
+  var GX = 2, GY = 3, GZ = 4;
+  var BX = 4, BY = 4, BZ = 4;
+  var G = GX * GY * GZ;      // 24 blocks
+  var T = BX * BY * BZ;      // 64 threads per block
+  var N = G * T;             // 1536 threads
+  var WARP = 32;
+  var WARPS = N / WARP;      // 48 warps
+
+  var $ = function (id) { return document.getElementById(id); };
+  var dots = [], timer = null, timeouts = [];
+
+  // Build one tile per block, one square per thread
+  var city = $('city');
+  for (var b = 0; b < G; b++) {
+    var tile = document.createElement('div');
+    tile.className = 'tile';
+    var lb = document.createElement('div');
+    lb.className = 'tl';
+    lb.textContent = 'block ' + b;
+    var wrap = document.createElement('div');
+    wrap.className = 'dots';
+    for (var t = 0; t < T; t++) {
+      var s = document.createElement('span');
+      s.dataset.i = b * T + t;          // global id
+      wrap.appendChild(s);
+      dots.push(s);
+    }
+    tile.appendChild(lb);
+    tile.appendChild(wrap);
+    city.appendChild(tile);
+  }
+
+  function stop() {
+    if (timer) { clearInterval(timer); timer = null; }
+    timeouts.forEach(clearTimeout);
+    timeouts = [];
+  }
+
+  function reset() {
+    stop();
+    dots.forEach(function (d) { d.className = ''; });
+    $('s1').textContent = '-';
+    $('s2').textContent = '0 / ' + N;
+    $('s3').textContent = '0';
+  }
+
+  // CPU: one thread at a time, like a for loop (sped up so you can watch it)
+  function runCpu() {
+    reset();
+    $('s1').textContent = 'for loop, ' + N + ' iterations';
+    var i = 0, step = 6;
+    timer = setInterval(function () {
+      for (var k = 0; k < step && i < N; k++, i++) {
+        if (i > 0) dots[i - 1].className = 'd';
+        dots[i].className = 'c';
+      }
+      if (i >= N) {
+        dots[N - 1].className = 'd';
+        stop();
+        $('s3').textContent = '0';
+        $('s2').textContent = N + ' / ' + N;
+        return;
+      }
+      $('s2').textContent = i + ' / ' + N;
+      $('s3').textContent = '1';
+    }, 16);
+  }
+
+  // GPU: no loop in the code. Warps start in batches, in no guaranteed order,
+  // because real hardware only fits so many warps on its SMs at one time.
+  function runGpu() {
+    reset();
+    $('s1').textContent = 'none, 1 launch line';
+
+    var order = [];
+    for (var w = 0; w < WARPS; w++) order.push(w);
+    for (var k = order.length - 1; k > 0; k--) {          // shuffle
+      var j = Math.floor(Math.random() * (k + 1));
+      var tmp = order[k]; order[k] = order[j]; order[j] = tmp;
+    }
+
+    var per = WARPS / 3;
+    var waves = [order.slice(0, per), order.slice(per, 2 * per), order.slice(2 * per)];
+    var finished = 0;
+
+    waves.forEach(function (wave, wi) {
+      timeouts.push(setTimeout(function () {
+        wave.forEach(function (wp) {
+          for (var q = 0; q < WARP; q++) dots[wp * WARP + q].className = 'c';
+        });
+        $('s3').textContent = wave.length * WARP;
+      }, wi * 700));
+
+      timeouts.push(setTimeout(function () {
+        wave.forEach(function (wp) {
+          for (var q = 0; q < WARP; q++) dots[wp * WARP + q].className = 'd';
+        });
+        finished += wave.length * WARP;
+        $('s2').textContent = finished + ' / ' + N;
+        if (wi === waves.length - 1) $('s3').textContent = '0';
+      }, wi * 700 + 450));
+    });
+  }
+
+  $('rc').addEventListener('click', runCpu);
+  $('rg').addEventListener('click', runGpu);
+  $('rr').addEventListener('click', function () {
+    reset();
+    $('info').textContent = 'Reset. Pick a mode to run.';
+  });
+
+  // Click a square: show how that thread computes its own id
+  city.addEventListener('click', function (e) {
+    var s = e.target.closest('span');
+    if (!s) return;
+    var i = +s.dataset.i;
+    var b = Math.floor(i / T), t = i % T;
+
+    var bx = b % GX, by = Math.floor(b / GX) % GY, bz = Math.floor(b / (GX * GY));
+    var tx = t % BX, ty = Math.floor(t / BX) % BY, tz = Math.floor(t / (BX * BY));
+
+    $('info').innerHTML =
+      'Thread id ' + String(i).padStart(4, '0') + ' (warp ' + Math.floor(t / WARP) + ' of its block)<br>' +
+      'blockIdx (' + bx + ' ' + by + ' ' + bz + ') -> block_id ' + b + '<br>' +
+      'threadIdx (' + tx + ' ' + ty + ' ' + tz + ') -> thread_offset ' + t + '<br>' +
+      'id = ' + b + ' * ' + T + ' + ' + t + ' = ' + i + '. It got this from its own indices, with no loop counter.';
+  });
+</script>
+</body>
+</html>

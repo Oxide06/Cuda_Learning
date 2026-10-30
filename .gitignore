@@ -1,0 +1,13 @@
+# compiled binaries
+a.out
+hello
+ptr*
+01_idxing
+vec_add
+*.o
+*.exe
+# notebooks
+.ipynb_checkpoints/
+# OS / editor
+.DS_Store
+.vscode/
