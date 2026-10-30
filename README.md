@@ -8,6 +8,23 @@ working up to a first vector-addition benchmark.
 > The curriculum belongs to its author. This repo is my own practice, notes and experiments while
 > following it. If you want to learn CUDA, start there.
 
+## Attribution and Licensing
+
+This repository documents my journey into CUDA and GPU programming.
+
+The learning path is primarily inspired by
+[Infatoshi's CUDA Course](https://github.com/Infatoshi/cuda-course).
+
+Some implementations are based on or adapted from examples in
+the course. Other experiments, explanations, visualizations, and
+implementations represent my own work.
+
+Third-party materials remain subject to their respective
+copyright and licensing terms.
+
+The MIT License applies only to my original contributions,
+not to third-party materials.
+
 ## Contents
 
 | Folder | What it covers |
