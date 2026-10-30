@@ -1,4 +1,8 @@
-<img width="512" height="256" alt="server_room_dog_wip_mark" src="https://github.com/user-attachments/assets/9c974032-383c-4be6-b595-aa1e1025f8f0" />
+<p align="center">
+  <img src="assets/Mark_the_server_room_dog.gif"
+       width="512"
+       alt="Oxide06 CUDA Learning">
+</p>
 
 
 # CUDA Learning Journal
