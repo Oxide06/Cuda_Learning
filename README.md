@@ -1,3 +1,6 @@
+<img width="512" height="256" alt="server_room_dog_wip_mark" src="https://github.com/user-attachments/assets/9c974032-383c-4be6-b595-aa1e1025f8f0" />
+
+
 # CUDA Learning Journal
 
 My notes and experiments while learning CUDA and GPU programming, starting from C pointers and
