@@ -40,6 +40,7 @@ not to third-party materials.
 | [`01_hello_cuda`](01_hello_cuda) | The first kernel: `hello<<<2, 4>>>()` |
 | [`02_thread_indexing`](02_thread_indexing) | Flattening 3D `blockIdx` / `threadIdx` into one global id, and why 64 threads per block means 2 warps |
 | [`03_vector_add`](03_vector_add) | CPU vs GPU vector addition on 10M floats, with a correctness check |
+| [`04_matrix_mul`](04_matrix_multiplication) | Basic matrix multiplication on GPU | 
 | [`visualizations`](visualizations) | Interactive HTML page: a CPU `for` loop vs a kernel launch |
 | [`notebooks`](notebooks) | The Colab notebook these files came from |
 
@@ -87,4 +88,5 @@ Things I check before trusting a result:
 
 ## Results so far
 
-See [`03_vector_add`](03_vector_add) for the numbers and what they do and do not mean.
+See [`03_vector_a`](03_vector_add) for the numbers and what they do and do not mean.
+See [`04_matrix_multiplication`](04_matrix_multiplication) for the numbers, and for why the CPU and GPU results can differ in the last few digits.
