@@ -89,4 +89,5 @@ Things I check before trusting a result:
 ## Results so far
 
 See [`03_vector_a`](03_vector_add) for the numbers and what they do and do not mean.
+
 See [`04_matrix_multiplication`](04_matrix_multiplication) for the numbers, and for why the CPU and GPU results can differ in the last few digits.
