@@ -1,51 +1,51 @@
-#include <cuda_runtime.h>
-#include <stdio.h>
+#include<stdio.h>
+#include<cuda_runtime.h>
 
 #define NUM_THREADS 1000
 #define NUM_BLOCKS 1000
 
-// kernel without atomics (incorrect)
-__global__ void incrementCounter_non_atomic(int* counter) {
-    // not locked
-    int old = *counter;
-    int new_val = old + 1;
-    // not unlocked
-    *counter = new_val;
+// kernel without atomics (take it as an example of incorrect kernel)
+__global__ void incrementCounterNonAtomic(int* counter){
+  // not locked
+  int old = *counter;
+  int new_val = old + 1;
+  // not unlocked
+  *counter = new_val;
 }
 
-// Kernel with atomics (correct)
-__global__ void incrementCounter_atomic(int* counter) {
-    int a = atomicAdd(counter, 1);
+// kernel with atomics
+__global__ void incrementCounterAtomic(int* counter){
+  int a = atomicAdd(counter, 1);
 }
 
-int main() {
-    int h_counter_non_atomic = 0;
-    int h_counter_atomic = 0;
-    int *d_counter_non_atomic, *d_counter_atomic;
+int main(){
+  int h_counterNA = 0; // host counter non atomicAdd
+  int h_counterA = 0; // host counter atomicAdd
+  int *d_counterNA, *d_counterA;
 
-    // allocate device memory
-    cudaMalloc((void**)&d_counter_non_atomic, sizeof(int));
-    cudaMalloc((void**)&d_counter_atomic, sizeof(int));
+  // allocate memory on device
+  cudaMalloc(&d_counterNA, sizeof(int));
+  cudaMalloc(&d_counterA, sizeof(int));
 
-    // copy initial counter values to device
-    cudaMemcpy(d_counter_non_atomic, &h_counter_non_atomic, sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_counter_atomic, &h_counter_atomic, sizeof(int), cudaMemcpyHostToDevice);
+  // copy intial counter values to device
+  cudaMemcpy(d_counterNA, &h_counterNA, sizeof(int), cudaMemcpyHostToDevice);
+  cudaMemcpy(d_counterA, &h_counterA, sizeof(int), cudaMemcpyHostToDevice);
 
-    // launching kernels
-    incrementCounter_non_atomic<<<NUM_BLOCKS, NUM_THREADS>>>(d_counter_non_atomic);
-    incrementCounter_atomic<<<NUM_BLOCKS, NUM_THREADS>>>(d_counterAtomic);
+  // launch the kernel
+  incrementCounterNonAtomic<<<NUM_BLOCKS, NUM_THREADS>>>(d_counterNA);
+  incrementCounterAtomic<<<NUM_BLOCKS, NUM_THREADS>>>(d_counterA);
 
-    // copying results back to host
-    cudaMemcpy(&h_counter_non_atomic, d_counter_non_atomic, sizeof(int), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&h_counter_atomic, d_counter_atomic, sizeof(int), cudaMemcpyDeviceToHost);
+  // copy the final counter values from device to host
+  cudaMemcpy(&h_counterNA, d_counterNA, sizeof(int), cudaMemcpyDeviceToHost);
+  cudaMemcpy(&h_counterA, d_counterA, sizeof(int), cudaMemcpyDeviceToHost);
 
-    
-    printf("Non-atomic counter value: %d\n", h_counter_non_atomic);
-    printf("Atomic counter value: %d\n", h_counter_atomic);
+  // print the final counter values
+  printf("Non-atomic counter value: %d\n", h_counterNA);
+  printf("Atomic counter value: %d\n", h_counterA);
 
-    // free device memory
-    cudaFree(d_counter_non_atomic);
-    cudaFree(d_counter_atomic);
+  // free memory on device because its not needed anymore and its a nice practice
+  cudaFree(d_counterNA);
+  cudaFree(d_counterA);
 
-    return 0;
+  return 0;
 }
