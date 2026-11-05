@@ -1,8 +1,8 @@
 #include<stdio.h>
 #include<cuda_runtime.h>
 
-#define NUM_THREADS 1000
-#define NUM_BLOCKS 1
+#define NUM_THREADS 600
+#define NUM_BLOCKS 2
 
 // Our mutex structure
 struct Mutex{
@@ -19,12 +19,14 @@ __host__ void initMutex(Mutex *m){
 // hold the mutex
 __device__ void lock(Mutex *m){
   while(atomicCAS(m->lock, 0, 1) != 0){
+    __threadfence();
     //Spin-wait
   }
 }
 
 // release the mutex
 __device__ void unlock(Mutex *m){
+  __threadfence();
   atomicExch(m->lock, 0);
 }
 
@@ -50,17 +52,16 @@ int main(){
   cudaMemcpy(d_counter, &h_counter, sizeof(int), cudaMemcpyHostToDevice);
 
   // launch the kernel
-  incrementCounter<<<NUM_BLOCKS, NUM_THREADS>>>(d_counter, m);
+  incrementCounter<<<2, 600>>>(d_counter, m);
 
-  cudaError_t err = cudaGetLastError();
-  if (err != cudaSuccess) {
-    printf("Kernel launch error: %s\n", cudaGetErrorString(err));
-  }
+  cudaError_t err = cudaDeviceSynchronize();
+  printf("Kernel: %s\n", cudaGetErrorString(err));
 
-  // copy the final counter values from device to host
-  cudaMemcpy(&h_counter, d_counter, sizeof(int), cudaMemcpyDeviceToHost);
-
-  printf("Counter value: %d\n", h_counter);
+  int result;
+  err = cudaMemcpy(&result, d_counter, sizeof(int), cudaMemcpyDeviceToHost);
+  printf("Memcpy: %s\n", cudaGetErrorString(err));
+    
+  printf("Counter value: %d\n", result);
 
   // free memory on device because its not needed anymore and its a nice practice
   cudaFree(d_counter);
