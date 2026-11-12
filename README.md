@@ -7,8 +7,9 @@
 
 # CUDA Learning Journal
 
-My notes and experiments while learning CUDA and GPU programming, starting from C pointers and
-working up to a first vector-addition benchmark.
+My notes and experiments while learning CUDA and GPU programming. I started from C pointers and
+have worked up through thread indexing, vector addition, matrix multiplication, atomics, and
+streams. I'm still adding to it as I learn.
 
 > **Credit:** my learning has been heavily based on
 > [Infatoshi/cuda-course](https://github.com/Infatoshi/cuda-course/tree/master).
@@ -40,7 +41,9 @@ not to third-party materials.
 | [`01_hello_cuda`](01_hello_cuda) | The first kernel: `hello<<<2, 4>>>()` |
 | [`02_thread_indexing`](02_thread_indexing) | Flattening 3D `blockIdx` / `threadIdx` into one global id, and why 64 threads per block means 2 warps |
 | [`03_vector_add`](03_vector_add) | CPU vs GPU vector addition on 10M floats, with a correctness check |
-| [`04_matrix_mul`](04_matrix_multiplication) | Basic matrix multiplication on GPU | 
+| [`04_matrix_multiplication`](04_matrix_multiplication) | Basic matrix multiplication on the GPU, using a 2D grid and 2D blocks |
+| [`05_atomics`](05_atomics) | Race conditions, `atomicAdd`, and a mutex built from `atomicCAS`, with the bugs I hit along the way |
+| [`06_streams`](06_streams) | Streams, async copies, pinned memory, and synchronization (in progress) |
 | [`visualizations`](visualizations) | Interactive HTML page: a CPU `for` loop vs a kernel launch |
 | [`notebooks`](notebooks) | The Colab notebook these files came from |
 
@@ -55,6 +58,13 @@ Compile and run any CUDA file:
 ```bash
 nvcc -arch=sm_75 -O2 file.cu -o file
 ./file
+```
+
+Check a program for invalid memory accesses:
+
+```bash
+nvcc -arch=sm_75 -lineinfo file.cu -o file
+compute-sanitizer ./file
 ```
 
 Compile and run any C file:
@@ -73,21 +83,41 @@ gcc file.c -o file && ./file
 4. **Output order from parallel threads is not guaranteed.** Warps start in whatever order the
    scheduler picks.
 5. **Benchmark carefully.** Launches are asynchronous, so synchronize before stopping the timer.
+6. **Many threads writing one value is a race.** `atomicAdd` fixes it. A hand-built mutex needs
+   fences (`__threadfence()`) to work across blocks.
+7. **A kernel can only use GPU memory.** Passing the address of a CPU struct to a kernel crashes.
+   Pass the struct by value instead.
+8. **A stream is an in-order queue of GPU work.** Different streams can overlap, but if one
+   depends on another, I have to synchronize it myself.
+9. **A correct-looking output is not proof.** A failed copy can leave an uninitialized variable
+   that happens to look right.
 
 ## Testing checklist
 
 Things I check before trusting a result:
 
-- [ ] Compiles with no warnings (`nvcc -Wall`-style flags where available)
+- [ ] Compiles with no warnings
 - [ ] The GPU result matches the CPU result (tolerance, not exact equality, for floats)
 - [ ] The kernel has a bounds check (`if (i < n)`) when the thread count is rounded up
 - [ ] A warmup run happens before timing
 - [ ] `cudaDeviceSynchronize()` is called before the end timestamp
-- [ ] CUDA calls are checked for errors (planned: a `CUDA_CHECK` macro)
+- [ ] CUDA calls are checked for errors (`CHECK_CUDA_ERROR` macro)
+- [ ] Result variables start at an impossible value (like `-1`), so a failed copy shows
+- [ ] Concurrent code is tested with more than one block
+- [ ] `compute-sanitizer` reports 0 errors
 - [ ] Timings are averaged over several runs and the GPU model is written down
 
 ## Results so far
 
-See [`03_vector_a`](03_vector_add) for the numbers and what they do and do not mean.
+See [`03_vector_add`](03_vector_add) for the numbers and what they do and do not mean.
 
 See [`04_matrix_multiplication`](04_matrix_multiplication) for the numbers, and for why the CPU and GPU results can differ in the last few digits.
+
+See [`05_atomics`](05_atomics) for the bugs I hit with a mutex and what each one taught me.
+
+## Next
+
+- [ ] Streams: a chunked version, timed against a single stream
+- [ ] Reduction (sum) with shared memory and warp shuffles
+- [ ] Tiled matrix multiplication with shared memory
+- [ ] Profile with Nsight Systems
